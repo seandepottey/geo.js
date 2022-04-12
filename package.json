@@ -1,0 +1,22 @@
+{
+    "name": "geo.js",
+    "version": "0.0.1",
+    "license": "",
+    "type": "module",
+    "main": "geo.js",
+    "homepage": "https://github.com/seandepottey/geo.js",
+    "keywords": [
+        "geo",
+        "board game"
+    ],
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/seandepottey/geo.git"
+    },
+    "devDependencies": {
+        "jest": "^27.5.1",
+    },
+    "scripts": {
+        "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js"
+    }
+}
