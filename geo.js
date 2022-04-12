@@ -60,6 +60,49 @@ const TILE_MAP = {
                             '0k': 55, '1k': 56, '2k': 57
 }
 
+function getDisambiguator() {
+    var from = move.from
+    var to = move.to
+    var piece = move.piece
+
+    var ambiguities = 0
+    var sameRank = 0
+    var sameFile = 0
+
+    var numberOfMoves = move.length
+    for (var i = 0, len = numberOfMoves; i < len; i++) {
+        var ambigFrom = moves[i].from
+        var ambigTo = moves[i].to
+        var ambigPiece = moves[i].piece
+
+        // If a move of the same piece type ends on the same tile, this function will help correct the algebraic notation
+        if (piece === ambigPiece && from !== ambigFrom && to === ambigTo) {
+            ambiguities++
+
+            if (rank(from) === rank(ambigFrom)) {
+                sameRank++
+            }
+
+            if (file(from) === file(ambigFrom)) {
+                sameFile++
+            }
+        }
+    }
+
+    if (ambiguities > 0) {
+        // If there exists a similar moving piece on the same rank and file as the move in question, use the tile as the disambiguator
+        if (sameRank > 0 && fameFile > 0) {
+            return tileName(from)
+        } else if (sameFile > 0) {
+            return tileName.charAt(1)
+        } else {
+            return tileName.charAt(2)
+        }
+    }
+
+    return ''
+}
+
 /***************************
  * UTILITY FUNCTIONS
  ***************************/
@@ -128,7 +171,7 @@ export const Geo = function (gfen) {
     }
 
     // If a user passes in a gfen string, load it, else default to starting position
-    if (typeof fen === 'undefined') {
+    if (typeof gfen === 'undefined') {
         load (DEFAULT_POSITION)
     } else {
         load (gfen)
@@ -385,7 +428,7 @@ export const Geo = function (gfen) {
         return output
     }
 
-    function gameOver() {
+    function eliminated() {
         if (diamonds[0][0] == null && diamonds[0][1] === null || diamonds[1][0] === null && diamonds[1][1] === null) {
             return true
         }
@@ -393,11 +436,11 @@ export const Geo = function (gfen) {
     }
 
     function insufficientMaterial() {
-
+        console.log("Write insufficient material")
     }
 
     function inThreeFoldRepition() {
-
+        console.log("Write three fold repition")
     }
 
     function push(move) {
@@ -414,13 +457,294 @@ export const Geo = function (gfen) {
         const them = swapColor(us)
         push(move)
 
-        const to = move.to
-        const from = move.from
+        const toCoord = move.to
+        const fromCoord = move.from
+        let boardFrom = board[fromCoord.y][fromCoord.x]
+        let boardTo = board[toCoord.y][toCoord.x]
 
-        board[to.y[to.x]] = board[from.y[from.x]]
-        board[from.y[from.x]] = null
+        /* if we captured an enemy diamond */
+        if(boardTo.type === DIAMOND) {
+            diamonds[them][boardTo.dNum] = null
+        }
+
+        boardTo = boardFrom
+        boardFrom = null
 
         /* Promotion */
-        if(moves.flags & BITS.PROMOTION)
+        if (move.flags & BITS.PROMOTION) {
+            boardTo = { type: move.promotion, color: us }
+        }
+
+        /* if we moved a dimaond */
+        if (boardTo.type === DIAMOND) {
+            diamonds[us][boardTo.dNum] = null
+        }
+
+        if (move.piece === PYRAMID) {
+            halfMoves = 0
+        } else if (move.flags & (BITS.CAPTURE)) {
+            halfMoves = 0
+        } else {
+            halfMoves++
+        }
+
+        if(turn === BLACK) {
+            moveNumber++
+        }
+        turn = swapColor(turn)
+    }
+
+    function undoMove() {
+        var old = history.pop()
+        if (old == null) {
+            null
+        }
+
+        var move = old.move
+        diamonds = old.diamonds
+        turn = old.turn
+        halfMoves = old.halfMoves
+        moveNumber = old.moveNumber
+
+        var us = turn
+        var them = swapColor(us)
+
+        var from = move.from
+        var to = move.to
+
+        var moveF = board[from.y][from.x]
+        var moveT = board[to.y][to.x]
+
+        moveF = moveT
+        moveF.type = move.piece // to undo any promotions
+        moveT = null
+
+        if (move.flags & BITS.CAPTURE) {
+            moveT = { type: move.captured, color: them }
+        }
+
+        return move
+    }
+
+    function outputMove(move) {
+        var clone = clone(move)
+        clone.san = moveToSan(clone, generateMoves({ legal: true }))
+        clone.to = tileName(clone.to)
+        clone.from = tileName(clone.from)
+
+        var flags = ''
+
+        for (var flag in BITS) {
+            if (BITS[flag] & move.flags) {
+                flags += FLAGS[flag]
+            }
+        }
+        move.flags = flags
+
+        return clone
+    }
+
+    return {
+        /*****************************************
+         * PUBLIC API
+         *****************************************/
+        load: function(gfen) {
+            return load(gfen)
+        },
+
+        reset: function() {
+            return reset()
+        },
+
+        moves: function (options) {
+            /* The internal representation of a move is in 0x88 format, and 
+             * not meant to be human readable. The code below converts the 0x88
+             * tile coordinates to alegbraic coordinates. 
+             * It also prunes an unnecessarry move keys resulting from a verbose call
+             */
+
+            var moves = []
+            for (var i = 0, len = uglyMoves.length; i < len; i++) {
+                if (
+                    typeof options !== 'undefined' &&
+                    'verbose' in options &&
+                    options.verbose
+                ) {
+                    moves.push(makePretty(uglyMoves[i]))
+                } else {
+                    moves.push(
+                        moveToSan(uglyMoves[i], generateMoves({ legal: true }))
+                    )
+                }
+            }
+
+            return moves
+        },
+
+        eliminated: function() {
+            return eliminated()
+        },
+
+        inDraw: function() {
+            return (
+                halfMoves >= 100 ||
+                insufficientMaterial() ||
+                inThreeFoldRepition
+            )
+        },
+
+        insufficientMaterial: function() {
+            return insufficientMaterial
+        },
+
+        inThreeFoldRepition: function() {
+            return inThreeFoldRepition
+        },
+
+        gameOver: function() {
+            return (
+                halfMoves >= 100 ||
+                eliminated() ||
+                insufficientMaterial ||
+                inThreeFoldRepition
+            )
+        },
+
+        validateGfen: function() {
+            return validateGfen
+        },
+
+        gfen: function() {
+            return generateGfen
+        },
+
+        board: function() {
+            var output = []
+            row = []
+            numberOfTilesPerRank = 3
+
+            for(var rankIndex = 0; rankIndex < 11; rankIndex++ ) {
+                for(var fileIndex = 0; fileIndex < numberOfTilesPerRank; fileIndex++) {
+                    if(board[rankIndex][fileIndex] == null) {
+                        row.push(null)
+                    } else {
+                        var tile = board[rankIndex][fileIndex];
+                        row.push({
+                            tile: tileName(fileIndex, rankIndex),
+                            type: tile.type,
+                            color: tile.color
+                        })
+                    }
+                    if(fileIndex === numberOfTilesPerRank - 1) {
+                        output.push(row)
+                        row = []
+                    }
+                }
+                if(rankIndex < 5) {
+                    numberOfTilesPerRank++
+                } else {
+                    numberOfTilesPerRank--;
+                }
+            }
+        },
+
+        turn: function() {
+            return turn
+        },
+
+        move: function (move, options) {
+            /* The move function can be called with in the following parameters:
+             *
+             * .move({ from: 'h7', <- where the 'move' is a move object (additional
+             *         to :'h8',      fields are ignored)
+             *         promotion: 'q',
+             *      })
+             */
+
+            var moveObj = null
+            if (typeof move === 'object') {
+                var moves = generateMoves()
+
+                /* convert move object to 0x88 */
+                for (var i = 0, len = move.length; i < len; i++) {
+                    if (move.from === tileName(move[i].from) &&
+                        move.to === tileName(move[i].to) &&
+                        (!('promotion' in moves[i])) ||
+                        move.promotion === moves[i].promotion
+                    ) {
+                        moveObj = moves[i]
+                        break
+                    }
+                }
+            }
+
+            // Failed to find move
+            if (!moveObj) {
+                return null
+            }
+
+            var sanMove = outputMove(moveObj)
+
+            makeMove(moveObj)
+
+            return sanMove
+        },
+
+        undo: function() {
+            var move = undoMove()
+            return move ? outputMove(move) : null
+        },
+
+        put: function() {
+            return put(piece, tile)
+        },
+
+        get: function(tile) {
+            return get(tile)
+        },
+
+        ascii() {
+            var s = 'COMING SOON!\n'
+            return s
+        },
+
+        remove: function() {
+            return remove
+        },
+
+        darkTile: function(tile) {
+            var offset = (tile.x > 5) ? 1: 0
+            if(tile.y % 2 == 0 && (tile.x - offset) % 2 != 0) {
+                return true
+            }
+            return false
+        },
+
+        history: function (options) {
+            var reversedHistory = []
+            var moveHistory = []
+            var verbose = 
+                typeof options !== 'undefined' && 
+                'verbose' in options &&
+                options.verbose
+
+            while (history.length > 0) {
+                reversedHistory.push(undoMove())
+            }
+
+            while (reversedHistory.length > 0) {
+                var prevMove = reversedHistory.pop()
+                if(verbose) {
+                    moveHistory.push(outputMove(prevMove))
+                } else {
+                    moveHistory.push(moveToSan(move, generateMoves({ legal: true })))
+                }
+                makeMove(prevMove)
+            }
+
+            return moveHistory
+        },
+
+
     }
 }
