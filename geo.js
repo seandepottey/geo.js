@@ -39,6 +39,13 @@ const PYRAMID_OFFSETS = [
 const PYRAMID_MOVES_WHITE = []
 const PYRAMID_MOVES_BLACK = []
 
+const BITS = {
+    NORMAL: 1,
+    CAPTURE: 2,
+    PROMOTION: 3,
+    PYRAMID_2: 4
+}
+
 const TILE_MAP = {
                             '0a': 0, '1a': 1, '2a': 2,
                         '0b': 3, '1b': 4, '2b': 5, '3b': 6,
@@ -147,7 +154,7 @@ export const Geo = function (gfen) {
         var numberOfSymbols = position.length;
         for (let char = 0; char < numberOfSymbols; char++) {
             tile = [fileIndex, rankIndex]
-            symbol = position[char];
+            var symbol = position[char];
             if(symbol === '/') {
                 fileIndex = 0;
                 rankIndex--;
@@ -205,15 +212,15 @@ export const Geo = function (gfen) {
         for (var rankIndex = 10; rankIndex >= 0; rankIndex--) {
             empty = 0
             for(var fileIndex = 0; fileIndex < numberOfTilesPerRank; fileIndex++) {
-                if(board[rankIndex[fileIndex]] == null) {
+                if(board[rankIndex][fileIndex] == null) {
                     empty++
                 } else {
                     if(empty > 0) {
                         gfen += empty
                         empty = 0;
                     }
-                    var pieceColor = board[rankIndex[fileIndex]].color
-                    var pieceType = board[rankIndex[fileIndex]].type
+                    var pieceColor = board[rankIndex][fileIndex].color
+                    var pieceType = board[rankIndex][fileIndex].type
     
                     gfen += (pieceColor === WHITE) ? pieceType.toUpperCase() : pieceType.toLowerCase()
                 }
@@ -238,7 +245,7 @@ export const Geo = function (gfen) {
     }
 
     function get(tile) {
-        var piece = board[tile.y[tile.x]]
+        var piece = board[tile.y][tile.x]
         return piece ? { type: piece.type, color: piece.color } : null
     }
 
@@ -266,11 +273,11 @@ export const Geo = function (gfen) {
             return false
         }
 
-        board[tile.y[tile.x]] = { type: piece.type, color: piece.color }
+        board[tile.y][tile.x] = { type: piece.type, color: piece.color }
 
         // NOTE: add logic for tracking diamonds position here (within the diamonds[])
         if(piece.type == DIAMOND) {
-            diamonds[piece.color[piece.dNum]]
+            diamonds[piece.color][piece.dNum]
         }
 
         updateSetup(generateGfen)
@@ -280,7 +287,7 @@ export const Geo = function (gfen) {
 
     function remove (tile) {
         var piece = get(tile)
-        board[tile.y[tile.x]] = null
+        board[tile.y][tile.x] = null
         if(piece && piece.type === DIAMOND) {
             diamonds[piece.color[piece.dNum]] = EMPTY
             // NOTE: number of diamonds
@@ -303,7 +310,7 @@ export const Geo = function (gfen) {
             move.promotion = promotion
         }
 
-        var capturedPiece = board[to.y[to.x]]
+        var capturedPiece = board[to.y][to.x]
         if (capturedPiece) {
             move.isCapture = true
             move.capture = capturedPiece
@@ -312,6 +319,7 @@ export const Geo = function (gfen) {
         return move
     }
 
+    // #region Move generation
     function generateMoves() {
         var moves = []
         var lastRankBeforePromotion = isWhite() ? 9 : 1
@@ -341,6 +349,47 @@ export const Geo = function (gfen) {
 
     function generateDiamondMoves() {
         // myDimaonds =
+    }
+    // #endregion
+    
+    /* convert a move from 0x88 coordinates to Standard Algebraic Notation
+     * (SAN)
+     */
+    function moveToSan(move, moves) {
+        var output = ''
+
+        if (move.piece !== PYRAMID) {
+            var disambiguator = getDisambiguator(move, moves)
+            output += move.piece.toUpperCase() + disambiguator
+        }
+
+        if (move.flags & (BITS.CAPTURE)) {
+            if(move.piece === PYRAMID) {
+                output += tileName(move.from)[0]
+            }
+            output += 'x'
+        }
+
+        output += tileName(move.to)
+
+        if(move.flags & BITS.PROMOTION) {
+            output += '=' + move.promotion.toUpperCase()
+        }
+
+        makeMove(move)
+        if (gameOver()) {
+            output += '#'
+        }
+        undoMove()
+
+        return output
+    }
+
+    function gameOver() {
+        if (diamonds[0][0] == null && diamonds[0][1] === null || diamonds[1][0] === null && diamonds[1][1] === null) {
+            return true
+        }
+        return false
     }
 
     function insufficientMaterial() {
