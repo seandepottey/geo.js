@@ -7,14 +7,15 @@
     "homepage": "https://github.com/seandepottey/geo.js",
     "keywords": [
         "geo",
-        "board game"
+        "board game",
+        "move generator"
     ],
     "repository": {
         "type": "git",
-        "url": "https://github.com/seandepottey/geo.git"
+        "url": "https://github.com/seandepottey/geo.js.git"
     },
     "devDependencies": {
-        "jest": "^27.5.1",
+        "jest": "^27.5.1"
     },
     "scripts": {
         "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js"
