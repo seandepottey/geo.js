@@ -9,6 +9,9 @@ const DEFAULT_POSITION = 'drd/cssc/ppppp/6/7/8/7/6/PPPPP/CSSC/DRD w 0 1'
 
 // const TERMINATION_MARKERS = ['1-0', '0-1', '1/2-1/2', '*']
 
+const NUMBER_OF_RANKS = 11;
+
+// #region precomputed move consts
 // DIRECTIONS
 // Axes are x, y, z
 // x is horizontal, y is NW & SE, z is NE, SW (both x & y)
@@ -22,22 +25,38 @@ const W = [-1,0]
 
 const DIRECTIONS = [NW, NE, E, SE, SW, W]
 
-const NUMBER_OF_RANKS = 11;
-
 const NUM_TILES_TO_EDGE = []
+
+const PYRAMID_ATTACK_DIRECTIONS = [ 
+    [0,1], // NW, NE by index
+    [3,4]  // SE, SW by index
+]
+
+const DIAMOND_OFFSETS = [
+    [1,2],      // Direct North (skippping a rank)
+    [-1, -2]    // Direct South (skippping a rank)
+]
+
+const SPHERE_ROLLS = [
+    // Inner circle
+    [0,1], [1,1], [1,0], [0,-1], [-1,-1], [-1,0]
+    // Outer circle
+    //[]
+]
+
+const RING_JUMPS = [
+    [0,3], [1,3], [2,3], [3,3], [3,2], [3,1], [3,0], [2,-1], [1, -2],
+    [0,-3], [-1, -3], [-2,-3], [-3,-3], [-3,-2], [-3-1], [-3,0], [-2,1], [-1,2]
+]
 
 // Array of array of numbers
 const SPHERE_MOVES = []
 const RING_MOVES = []
 const DIAMOND_MOVES = []
 
-const PYRAMID_OFFSETS = [ 
-    [0,1], // NW, NE by index
-    [3,4]  // SE, SW by index
-]
-
 const PYRAMID_MOVES_WHITE = []
 const PYRAMID_MOVES_BLACK = []
+// #endregion
 
 const BITS = {
     NORMAL: 1,
@@ -45,6 +64,11 @@ const BITS = {
     PROMOTION: 3,
     PYRAMID_2: 4
 }
+
+const RANK_A = 0;
+const RANK_B = 1;
+const RANK_J = 9;
+const RANK_K = 10;
 
 const TILE_MAP = {
                             '0a': 0, '1a': 1, '2a': 2,
@@ -115,8 +139,13 @@ function file (coord) {
     return coord.y
 }
 
+// Adjusts the file number to axial where the x value aligns diagonally
+function axialFile (coord) {
+    return (coord.y > 5) ? (coord.x + rankIndex - 5) : coord.x
+}
+
 // Unadjusts the file number from axial where each rank would start with a file 0
-function offsetFile(coord) {
+function offsetFile (coord) {
     return (coord.y < 6) ? coord.x : coord.x - rankIndex + 5
 }
 
@@ -125,6 +154,24 @@ function tileName (coord) {
     const f = offsetFile(coord)
     const r = rank(i)
     return '12345678'.substring(f, f+1) + 'abcdefghijk'.substring(r, r + 1)
+}
+
+function isDigit (char) {
+    return 'o123456789' .indexOf(char) !== -1
+}
+
+function clone (obj) {
+    var dupe = obj instanceof Array ? [] : {}
+
+    for (var property in obj) {
+        if (typeof property === 'object') {
+            dupe[property] = clone (obj[property])
+        } else {
+            dupe[property] = obj[property]
+        }
+    }
+
+    return dupe
 }
 
 /***************************
@@ -150,7 +197,102 @@ export const DIAMOND = 'd'
 //     return keys
 // })()
 
-// NOTE: Flags can and maybe should be converted to integers for speed
+// Precomputed Move Data
+export const pmd = (function () {
+    var numOfTilesToEdge = []
+    var numberOfTilesPerRank = 3
+    
+    var nwLengthStart = 5
+    var neLengthStart = 7
+    var seLengthStart = 0
+    var swLengthStart = 0
+
+    for (var rankIndex = 0; rankIndex < NUMBER_OF_RANKS; rankIndex++) {
+        var nwTiles = nwLengthStart
+        var neTiles = neLengthStart
+        var seTiles = seLengthStart
+        var swTiles = swLengthStart
+        var lastTileIndex = numberOfTilesPerRank
+
+        for (var fileIndex = 0; fileIndex < numberOfTilesPerRank; fileIndex++) {
+            // #region directional to boards edge
+            // x axis is as expected length is equal to numberOfTilesPerRow
+            // y axis goes 0-[6-8] from the SE to the NW
+            // z axis goes 0-[6-8] from the SW to the NE
+
+            // With 3,5 as an example
+            // NW = 3
+            // NE = 4
+            // SE = 4
+            // SW = 3
+            var axI = axialFile({ x: fileIndex, y: rankIndex})
+
+            numOfTilesToEdge[rankIndex][axI][0] = nwTiles
+            numOfTilesToEdge[rankIndex][axI][1] = neTiles
+            numOfTilesToEdge[rankIndex][axI][2] = (numberOfTilesPerRank - 1) - fileIndex
+            numOfTilesToEdge[rankIndex][axI][3] = seTiles
+            numOfTilesToEdge[rankIndex][axI][4] = swTiles
+            numOfTilesToEdge[rankIndex][axI][5] = fileIndex
+
+            if (rankIndex < 4) {
+                nwTiles++
+            } else if (rankIndex === 4 && nwTiles < 6) {
+                nwTiles++
+            } else if (rankIndex > 4 && fileIndex < (numberOfTilesPerRank - 3)) {
+                nwTiles++
+            }
+
+            if (rankIndex < 4) {
+                neTiles--
+            } else if (rankIndex === 4 && fileIndex > 0) {
+                neTiles--
+            } else if (rankIndex > 4 && fileIndex > 1) {
+                neTiles--
+            }
+
+            if (rankIndex < 6 && fileIndex > 1) {
+                seTiles--
+            } else if (rankIndex === 6 && fileIndex > 0) {
+                seTiles--
+            } else if (rankIndex > 6) {
+                seTiles--;
+            }
+
+            if (rankIndex < 6 && fileIndex < (numberOfTilesPerRank - 3)) {
+                swTiles++
+            } else if (rankIndex === 6 && swTiles < 6) {
+                swTiles++
+            } else if (rankIndex > 6) {
+                swTiles++
+            }
+            // #endregion
+        }
+        // Adjust row count
+        if(rankIndex < 5) {
+            numberOfTilesPerRank++
+        } else {
+            numberOfTilesPerRank--;
+        }
+
+        // Adjust diagonal starting counts NW, NE, SE, SW
+        if (rankIndex < 5) {
+            nwLengthStart--;
+        }
+
+        if (rankIndex > 2) {
+            neLengthStart--;
+        }
+
+        if (rankIndex < 7) {
+            seLengthStart++
+        }
+
+        if(rankIndex > 4) {
+            swLengthStart++
+        }
+    }
+})()
+
 export const FLAGS = {
     NORMAL: 'n',
     CAPTURE: 'c',
@@ -226,6 +368,8 @@ export const Geo = function (gfen) {
 
     function validateGfen (gfen) {
         var tokens = gfen.split(/\s+/)
+        var whitePieces = []
+        var blackPieces = []
         
         // 1: Are there 4 sepearate fields
         if(tokens.length !== 4) {
@@ -364,8 +508,34 @@ export const Geo = function (gfen) {
 
     // #region Move generation
     function generateMoves() {
+        function addMove(board, moves, from, to , flags) {
+            /* if pyramid promotion */
+            var boardFrom = board[from.y][from.x]
+            var boardTo = board[to.y][to.x]
+            if (
+                boardFrom.type === PYRAMID && 
+                (rank(to) === RANK_A || rank(to) === RANK_k) 
+            ) {
+                var pieces = [COLUMN, SPHERE, RING, DIAMOND]
+                var numberOfPieceTypes = pieces.length;
+                for (var i = 0; i < numberOfPieceTypes; i++) {
+                    move.push(buildMove(board, from, to, flags, pieces[i]))
+                }
+            } else {
+                move.push(buildMove(board, from, to, flags))
+            }
+        }
+
         var moves = []
         var lastRankBeforePromotion = isWhite() ? 9 : 1
+
+        var pieceType = 
+            typeof options !== 'undefined' && 
+            'piece' in options &&
+            typeof options.piece === 'string'
+            ? options.piece.toLowerCase()
+            : true
+
 
         // generatePyramidMoves()
         // generateColumnMoves()
@@ -527,7 +697,7 @@ export const Geo = function (gfen) {
     }
 
     function outputMove(move) {
-        var clone = clone(move)
+        var clone = clone (move)
         clone.san = moveToSan(clone, generateMoves({ legal: true }))
         clone.to = tileName(clone.to)
         clone.from = tileName(clone.from)
