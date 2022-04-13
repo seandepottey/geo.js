@@ -10,6 +10,7 @@ const DEFAULT_POSITION = 'drd/cssc/ppppp/6/7/8/7/6/PPPPP/CSSC/DRD w 0 1'
 // const TERMINATION_MARKERS = ['1-0', '0-1', '1/2-1/2', '*']
 
 const NUMBER_OF_RANKS = 11;
+const NUMBER_OF_FILES_PER_RANK = [3,4,5,6,7,8,7,6,5,4,3]
 
 // #region precomputed move consts
 // DIRECTIONS
@@ -17,9 +18,11 @@ const NUMBER_OF_RANKS = 11;
 // x is horizontal, y is NW & SE, z is NE, SW (both x & y)
 // Where x,y || file,rank
 const NW = [0,1]
+const NORTH = [1,2]
 const NE = [1,1]
 const E = [1,0]
 const SE = [0,-1]
+const SOUTH = [-1,-2]
 const SW = [-1,-1]
 const W = [-1,0]
 
@@ -33,15 +36,14 @@ const PYRAMID_ATTACK_DIRECTIONS = [
 ]
 
 const DIAMOND_OFFSETS = [
-    [1,2],      // Direct North (skippping a rank)
-    [-1, -2]    // Direct South (skippping a rank)
+    NORTH,  // Direct North (skippping a rank)
+    SOUTH   // Direct South (skippping a rank)
 ]
 
 const SPHERE_ROLLS = [
     // Inner circle
-    [0,1], [1,1], [1,0], [0,-1], [-1,-1], [-1,0]
+    NW, NE, E, SE, SW, W
     // Outer circle
-    //[]
 ]
 
 const RING_JUMPS = [
@@ -158,6 +160,17 @@ function tileName (coord) {
 
 function isDigit (char) {
     return 'o123456789' .indexOf(char) !== -1
+}
+
+function validateCoord (coord) {
+    var fileIndex = coord.x
+    var rankIndex = coord.y
+    // NOTE: This pattern of using a const can replace the numberOfTiles++ incrementing deincrementing, may be faster?
+    var filesPerRank = NUMBER_OF_FILES_PER_RANK[rankIndex]
+    if (fileIndex > -1 && fileIndex < filesPerRank && rankIndex > -1 && rankIndex < 11) {
+        return true
+    }
+    return false
 }
 
 function clone (obj) {
@@ -314,41 +327,38 @@ export const Geo = function (gfen) {
 
     // If a user passes in a gfen string, load it, else default to starting position
     if (typeof gfen === 'undefined') {
-        load (DEFAULT_POSITION)
+        load (DEFAULT_POSITION, false)
     } else {
-        load (gfen)
+        load (gfen, true)
     }
 
     function reset () {
-        load(DEFAULT_POSITION)
+        load(DEFAULT_POSITION, false)
     }
 
-    function load (gfen) {
+    function load (gfen, validate) {
         var tokens = gfen.split(/\s+/)
         var position = tokens[0]
         
-        var numberOfTilesPerRank = 3;
         var fileIndex = 0;
         var rankIndex = 10;
         var tile = [0,0];
 
-        if (!validateGfen (gfen).valid) {
-            return false;
+        // Only run validation on custom gfens
+        if(validate) {
+            if (!validateGfen (gfen).valid) {
+                return false;
+            }
         }
 
         var numberOfSymbols = position.length;
         for (let char = 0; char < numberOfSymbols; char++) {
-            tile = [fileIndex, rankIndex]
+            var axialIndex = axialFile(fileIndex)
+            tile = [axialIndex, rankIndex]
             var symbol = position[char];
             if(symbol === '/') {
                 fileIndex = 0;
                 rankIndex--;
-                // Adjust row count
-                if (rankIndex > 5) {
-                    numberOfTilesPerRank++;
-                } else {
-                    numberOfTilesPerRank--;
-                }
             } else if(isDigit(symbol)) {
                 fileIndex += parseInt(symbol)
             } else {
@@ -368,6 +378,7 @@ export const Geo = function (gfen) {
 
     function validateGfen (gfen) {
         var tokens = gfen.split(/\s+/)
+        var positions = tokens[0]
         var whitePieces = []
         var blackPieces = []
         
@@ -386,7 +397,52 @@ export const Geo = function (gfen) {
             return { valid: false }
         }
 
-        //
+        // 4: Check positions for errors
+        var numberOfSymbols = position.length;
+        var whiteDiamonds = 0
+        var blackDimaonds = 0
+        var maxIndexOfTilesPerRank = 2
+        var rankIndex = 10
+        var fileIndex = 0
+
+        for (let char = 0; char < numberOfSymbols; char++) {
+            var axialIndex = axialFile(fileIndex)
+            tile = [axialIndex, rankIndex]
+            var symbol = position[char];
+            if (symbol == '/') {
+                fileIndex = 0
+                usedFiles = 0
+                rankIndex--
+                if(rankIndex > 5) {
+                    numberOfTilesPerRank++
+                } else {
+                    numberOfTilesPerRank--
+                }
+            } else {
+                if (isDigit(symbol)) {
+                    fileIndex += parseInt(symbol)
+                } else {
+                    switch (symbol) {
+                        case 'd':
+                            blackDimaonds++
+                            break;
+                        case 'D':
+                            whiteDiamonds++
+                            break;
+                    }
+                    fileIndex++
+                }
+            }
+            // If a file is too long
+            if(fileIndex > maxIndexOfTilesPerRank) {
+                return { valid: false }
+            }
+        }
+
+        // 5: Position doesn't have at least one diamond per side
+        if (whiteDiamonds === 0 || blackDimaonds === 0 ) {
+            return { valid: false }
+        }
 
         return true
     }
@@ -399,15 +455,16 @@ export const Geo = function (gfen) {
         for (var rankIndex = 10; rankIndex >= 0; rankIndex--) {
             empty = 0
             for(var fileIndex = 0; fileIndex < numberOfTilesPerRank; fileIndex++) {
-                if(board[rankIndex][fileIndex] == null) {
+                var axialIndex = axialFile(fileIndex)
+                if(board[rankIndex][axialIndex] == null) {
                     empty++
                 } else {
                     if(empty > 0) {
                         gfen += empty
                         empty = 0;
                     }
-                    var pieceColor = board[rankIndex][fileIndex].color
-                    var pieceType = board[rankIndex][fileIndex].type
+                    var pieceColor = board[rankIndex][axialIndex].color
+                    var pieceType = board[rankIndex][axialIndex].type
     
                     gfen += (pieceColor === WHITE) ? pieceType.toUpperCase() : pieceType.toLowerCase()
                 }
@@ -418,6 +475,11 @@ export const Geo = function (gfen) {
             if(rankIndex != 0) {
                 gfen += '/'
             }
+            if(rankIndex > 5) {
+                numberOfTilesPerRank++
+            } else {
+                numberOfTilesPerRank--
+            }
         }
 
         return [gfen, turn, halfMoves, moveNumber].join(' ')
@@ -425,9 +487,11 @@ export const Geo = function (gfen) {
 
     function updateSetup(gfen) {
         if(history.length > 0) return
-
+            
         if(gfen !== DEFAULT_POSITION) {
-
+            header['GFEN'] = gfen
+        } else {
+            delete header['GFEN']
         }
     }
 
@@ -477,7 +541,6 @@ export const Geo = function (gfen) {
         board[tile.y][tile.x] = null
         if(piece && piece.type === DIAMOND) {
             diamonds[piece.color[piece.dNum]] = EMPTY
-            // NOTE: number of diamonds
         }
 
         updateSetup(generateGfen)
@@ -493,13 +556,12 @@ export const Geo = function (gfen) {
         }
 
         if (promotion) {
-            move.isPromotion = true
+            move.flags |= BITS.PROMOTION
             move.promotion = promotion
         }
 
         var capturedPiece = board[to.y][to.x]
         if (capturedPiece) {
-            move.isCapture = true
             move.capture = capturedPiece
         }
 
@@ -508,27 +570,8 @@ export const Geo = function (gfen) {
 
     // #region Move generation
     function generateMoves() {
-        function addMove(board, moves, from, to , flags) {
-            /* if pyramid promotion */
-            var boardFrom = board[from.y][from.x]
-            var boardTo = board[to.y][to.x]
-            if (
-                boardFrom.type === PYRAMID && 
-                (rank(to) === RANK_A || rank(to) === RANK_k) 
-            ) {
-                var pieces = [COLUMN, SPHERE, RING, DIAMOND]
-                var numberOfPieceTypes = pieces.length;
-                for (var i = 0; i < numberOfPieceTypes; i++) {
-                    move.push(buildMove(board, from, to, flags, pieces[i]))
-                }
-            } else {
-                move.push(buildMove(board, from, to, flags))
-            }
-        }
-
         var moves = []
-        var lastRankBeforePromotion = isWhite() ? 9 : 1
-
+        
         var pieceType = 
             typeof options !== 'undefined' && 
             'piece' in options &&
@@ -536,32 +579,226 @@ export const Geo = function (gfen) {
             ? options.piece.toLowerCase()
             : true
 
+        var numberOfTilesPerRank = 3
 
-        // generatePyramidMoves()
-        // generateColumnMoves()
-        // generateSphereMoves()
-        // generateRingMoves()
-        // generateDiamondMoves()
+        for (var rankIndex = 0; rankIndex < NUMBER_OF_RANKS; rankIndex++) {
+            for (var fileIndex = 0; fileIndex < numberOfTilesPerRank; fileIndex++) {
+                piece = board[rankIndex][fileIndex]
+                if(piece == null || piece.color !== us) {
+                    continue
+                }
+                
+                // NOTE: CONCATENATE THE ARRAYS HERE
+                if (piece.type === PYRAMID && (pieceType === true || pieceType === PYRAMID)) {
+                    var pyramidMoves = generatePyramidMoves(piece)
+                    moves.concat(pyramidMoves)
+                }
+
+                if (piece.type === COLUMN && (pieceType === true || pieceType === COLUMN)) {
+                    var columnsMoves = generateColumnMoves(piece)
+                    moves.concat(columnsMoves)
+                }
+
+                if (piece.type === SPHERE && (pieceType === true || pieceType === SPHERE)) {
+                    var sphereMoves = generateSphereMoves(piece)
+                    moves.concat(sphereMoves)
+                }
+
+                if (piece.type === RING && (pieceType === true || pieceType === RING)) {
+                    var ringMoves = generateRingMoves(piece)
+                    moves.concat(ringMoves)
+                }
+
+                if (piece.type === DIAMOND && (pieceType === true || pieceType === DIAMOND)) {
+                    var diamondMoves = generateDiamondMoves(piece)
+                    moves.concat(diamondMoves)
+                }
+            }
+            if (rankIndex < 5) {
+                numberOfTilesPerRank++
+            } else {
+                numberOfTilesPerRank--
+            }
+        }
+
+        return Moves
     }
 
-    function generatePyramidMoves() {
-        // myPyramids = pieces[us]
+    function generatePyramidMoves(tile) {
+        var moves = []
+        var rank = tile.y
+        var whitePiece = isWhite(piece.color)
+        var finalRankBeforePromotion = whitePiece ? 9 : 1
+        var startRank = whitePiece ? 2 : 8
+        var oneStepFromPromotion = rank == finalRankBeforePromotion
+        var dir = whitePiece ? PYRAMID_ATTACK_DIRECTIONS[0] : PYRAMID_ATTACK_DIRECTIONS[1]
+        if (rank === startRank) {
+            var targetX = tile.x + N[0]
+            var targetY = tile.y + N[1]
+            var target = board[targetY][targetX]
+            moves.push(buildMove(board, moves, tile, target, BITS.PYRAMID_2))
+        }
+        for (var j = 0; j < 2; j++) {
+            var tilesToEdge = numOfTilesToEdge[tile.y][tile.x][dir][j]
+            if (tilesToEdge > 0) {
+                var moveDir = dir[j]
+                var targetX = tile.x + DIRECTIONS[moveDir][0]
+                var targetY = tile.y + DIRECTIONS[moveDir][1]
+                var target = board[targetY][targetX]
+                var flag = (typeof target.type === "undefined") ? BITS.NORMAL : BITS.CAPTURE
+                var promotion = oneStepFromPromotion ? true : false
+
+                if (promotion) {
+                    var pieces = [COLUMN, SPHERE, RING, DIAMOND]
+                    var numberOfPieceTypes = pieces.length;
+                    for (var i = 0; i < numberOfPieceTypes; i++) {
+                        move.push(buildMove(board, from, to, flags, pieces[i]))
+                    }
+                } else {
+                    moves.push(buildMove(board, moves, tile, target, flag))
+                }
+            }
+        }
+        return moves
     }
 
-    function generateColumnMoves() {
-        // myColumns = 
+    function generateColumnMoves(tile) {
+        var moves = []
+        for (var dirIndex = 0; dirIndex < 6; dirIndex++) {
+            var tilesToEdge = numOfTilesToEdge[tile.y][tile.x][dirIndex]
+            for (var n = 0; n < tilesToEdge; n++) {
+                if (n < 6) {
+                    var targetX = tile.x + DIRECTIONS[dirIndex][0] * (n + 1)
+                    var targetY = tile.y + DIRECTIONS[dirIndex][1] * (n + 1)
+                    var target = board[targetY][targetX]
+                    var color = target.color
+                    var enemy = swapColor(color)
+                    if (color === tile.color) {
+                        break
+                    }
+                    
+                    if (color !== enemy) {
+                        moves.push(buildMove(board, tile, target, BITS.NORMAL))
+                        break
+                    } else {
+                        moves.push(buildMove(board, tile, target, BITS.CAPTURE))
+                    }
+                }
+            }
+        }
+        return moves
     }
 
-    function generateSphereMoves() {
-        // mySpheres = 
+    function generateSphereMoves(tile) {
+        var moves = []
+        // NOTE: Can add an array here to check if a move in the outer circle has already been found.
+        for (var dirIndex = 0; dirIndex < 6; dirIndex++) {
+            // Inner circle
+            var targetX = tile.x + DIRECTIONS[dirIndex][0]
+            var targetY = tile.y + DIRECTIONS[dirIndex][1]
+            var target = board[targetY][targetX]
+            var color = target.color
+            var enemy = swapColor(color)
+            if (color === tile.color) {
+                continue
+            }
+
+            if (color !== enemy) {
+                moves.push(buildMove(board, tile, target, BITS.NORMAL))
+
+                for (var offset = - 1; offset < 2; offset++) {
+                    var offsetDir = dirIndex + offset;
+                    if (offsetDir < 0) {
+                        offsetDir = 5; // The last direction
+                    }
+                    if (offsetDir > 5) {
+                        offsetDir = 0;
+                    }
+                    var t2X = target.x + DIRECTIONS[offsetDir][0]
+                    var t2Y = target.y + DIRECTIONS[offsetDir][1]
+                    var targetCoord = { x: t2X, y: t2Y }
+                    var isValid = validateCoord(targetCoord)
+                    if (isValid) {
+                        var move2 = board[t2Y][t2Y]
+                        var flag = color !== enemy ? BITS.NORMAL : BITS.CAPTURE
+                        // NOTE: Currently moves are duplicated within here
+                        // a possible solution would be a slightly more complex 
+                        // version of the diamond north south check
+                        moves.push(buildMove(board, tile, move2, flag))
+                    }
+                }
+            } else {
+                moves.push(buildMove(board, tile, target, BITS.CAPTURE))
+            }
+        }
+        return moves
     }
 
-    function generateRingMoves() {
-        // myRings =
+    function generateRingMoves(tile) {
+        var moves = []
+        var moves = []
+
+        var numberOfJumps = RING_JUMPS.length
+        for (var jump = 0; jump < numberOfJumps; jump++) {
+            var targetX = RING_JUMPS[jump][0]
+            var targetY = RING_JUMPS[jump][1]
+            var targetCoord = { x: targetX, y: targetY }
+            var isValid = validateCoord(targetCoord)
+            if (isValid) {
+                var target = board[targetY][targetX]
+                var color = target.color
+                if(color === tile.color) {
+                    continue
+                }
+                var flag = color !== enemy ? BITS.NORMAL : BITS.CAPTURE
+                buildMove(board, tile, target, flag)
+            }
+        }
+        return moves
     }
 
-    function generateDiamondMoves() {
-        // myDimaonds =
+    function generateDiamondMoves(tile) {
+        var moves = []
+        var north = false
+        var south = false
+        for (var dirIndex = 0; dirIndex < 6; dirIndex++) {
+            // Inner circle
+            var targetX = tile.x + DIRECTIONS[dirIndex][0]
+            var targetY = tile.y + DIRECTIONS[dirIndex][1]
+            var target = board[targetY][targetX]
+            var color = target.color
+            var enemy = swapColor(color)
+            if (color === tile.color) {
+                continue
+            }
+
+            if (color !== enemy) {
+                moves.push(buildMove(board, moves, tile, target, BITS.NORMAL))
+                switch (dirIndex) {
+                    case 0 || 1:
+                        if(!north) {
+                            // Add direct north
+                            var nX = tile.x + NORTH[0]
+                            var nY = tile.y + NORTH[1]
+                            var northTarget = board[nY][nX]
+                            moves.push(buildMove(board, moves, tile))
+                            north = true
+                        }
+                        break;
+                    case 3 || 4:
+                        if(!south) {
+                            // Add direct south
+                            var sX = tile.x + SOUTH[0]
+                            var sY = tile.y + SOUTH[1]
+                            var southTarget
+                            south = true
+                        }
+                }
+            } else {
+                moves.push(buildMove(board, moves, tile, target, BITS.CAPTURE))
+            }
+        }
+        return moves
     }
     // #endregion
     
@@ -816,6 +1053,8 @@ export const Geo = function (gfen) {
                     numberOfTilesPerRank--;
                 }
             }
+
+            return output
         },
 
         turn: function() {
@@ -858,6 +1097,26 @@ export const Geo = function (gfen) {
             makeMove(moveObj)
 
             return sanMove
+        },
+
+        generatePyramidMoves: function (tile) {
+            return generatePyramidMoves(tile)
+        },
+
+        generateColumnMoves: function (tile) {
+            return generateColumnMoves(tile)
+        },
+
+        generateSphereMoves: function (tile) {
+            return generateSphereMoves(tile)
+        },
+
+        generateRingMoves: function (tile) {
+            return generateRingMoves(tile)
+        },
+
+        generateDiamondMoves: function (tile) {
+            return generateDiamondMoves(tile)
         },
 
         undo: function() {
@@ -913,8 +1172,6 @@ export const Geo = function (gfen) {
             }
 
             return moveHistory
-        },
-
-
+        }
     }
 }
