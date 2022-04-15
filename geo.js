@@ -28,8 +28,6 @@ const W = [-1,0]
 
 const DIRECTIONS = [NW, NE, E, SE, SW, W]
 
-const NUM_TILES_TO_EDGE = []
-
 const PYRAMID_ATTACK_DIRECTIONS = [ 
     [0,1], // NW, NE by index
     [3,4]  // SE, SW by index
@@ -82,11 +80,11 @@ const TILE_MAP = {
             '0g': 33, '1g': 34, '2g': 35, '3g': 36, '4g': 37, '5g': 38, '6g': 39,
                 '0h': 40, '1h': 41, '2h': 42, '3h': 43, '4h': 44, '5h': 45,
                     '0i': 46, '1i': 47, '2i': 48, '3i': 49, '4i': 50,
-                        '0j': 51, '1i': 52, '2i': 52, '3i': 54,
+                        '0j': 51, '1j': 52, '2j': 52, '3j': 54,
                             '0k': 55, '1k': 56, '2k': 57
 }
 
-function getDisambiguator() {
+function getDisambiguator(move, moves) {
     var from = move.from
     var to = move.to
     var piece = move.piece
@@ -95,7 +93,7 @@ function getDisambiguator() {
     var sameRank = 0
     var sameFile = 0
 
-    var numberOfMoves = move.length
+    var numberOfMoves = moves.length
     for (var i = 0, len = numberOfMoves; i < len; i++) {
         var ambigFrom = moves[i].from
         var ambigTo = moves[i].to
@@ -117,7 +115,7 @@ function getDisambiguator() {
 
     if (ambiguities > 0) {
         // If there exists a similar moving piece on the same rank and file as the move in question, use the tile as the disambiguator
-        if (sameRank > 0 && fameFile > 0) {
+        if (sameRank > 0 && sameFile > 0) {
             return tileName(from)
         } else if (sameFile > 0) {
             return tileName.charAt(1)
@@ -143,18 +141,18 @@ function file (coord) {
 
 // Adjusts the file number to axial where the x value aligns diagonally
 function axialFile (coord) {
-    return (coord.y > 5) ? (coord.x + rankIndex - 5) : coord.x
+    return (coord.y > 5) ? (coord.x + coord.y - 5) : coord.x
 }
 
 // Unadjusts the file number from axial where each rank would start with a file 0
 function offsetFile (coord) {
-    return (coord.y < 6) ? coord.x : coord.x - rankIndex + 5
+    return (coord.y < 6) ? coord.x : coord.x - coord.y + 5
 }
 
 // Returns tile name
 function tileName (coord) {
     const f = offsetFile(coord)
-    const r = rank(i)
+    const r = rank(coord)
     return '12345678'.substring(f, f+1) + 'abcdefghijk'.substring(r, r + 1)
 }
 
@@ -320,6 +318,7 @@ export const Geo = function (gfen) {
     var halfMoves = 0
     var moveNumber = 1
     var history = []
+    var header = {}
 
     function isWhite (piece) {
         return piece.color === WHITE
@@ -353,7 +352,7 @@ export const Geo = function (gfen) {
 
         var numberOfSymbols = position.length;
         for (let char = 0; char < numberOfSymbols; char++) {
-            var axialIndex = axialFile(fileIndex)
+            var axialIndex = axialFile({x: fileIndex, y: rankIndex})
             tile = [axialIndex, rankIndex]
             var symbol = position[char];
             if(symbol === '/') {
@@ -398,7 +397,7 @@ export const Geo = function (gfen) {
         }
 
         // 4: Check positions for errors
-        var numberOfSymbols = position.length;
+        var numberOfSymbols = positions.length;
         var whiteDiamonds = 0
         var blackDimaonds = 0
         var maxIndexOfTilesPerRank = 2
@@ -407,16 +406,15 @@ export const Geo = function (gfen) {
 
         for (let char = 0; char < numberOfSymbols; char++) {
             var axialIndex = axialFile(fileIndex)
-            tile = [axialIndex, rankIndex]
-            var symbol = position[char];
+            var tile = [axialIndex, rankIndex]
+            var symbol = positions[char];
             if (symbol == '/') {
                 fileIndex = 0
-                usedFiles = 0
                 rankIndex--
                 if(rankIndex > 5) {
-                    numberOfTilesPerRank++
+                    maxIndexOfTilesPerRank++
                 } else {
-                    numberOfTilesPerRank--
+                    maxIndexOfTilesPerRank--
                 }
             } else {
                 if (isDigit(symbol)) {
