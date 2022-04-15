@@ -20,7 +20,7 @@
   "scripts": {
     "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js"
   },
-  "description": "geo-js.js is a javascript move generator for the geo board game. It's intended for user input on the front end.\r generate/validation & piece placement/movement",
+  "description": "geo.js is a javascript move generator for the geo board game. It's intended for user input on the front end.\r generate/validation & piece placement/movement",
   "bugs": {
     "url": "https://github.com/seandepottey/geo.js/issues"
   },
