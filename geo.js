@@ -157,7 +157,7 @@ function tileName (coord) {
 }
 
 function isDigit (char) {
-    return 'o123456789' .indexOf(char) !== -1
+    return '0123456789' .indexOf(char) !== -1
 }
 
 function validateCoord (coord) {
@@ -363,6 +363,7 @@ export const Geo = function (gfen) {
             } else {
                 var pieceColor = (symbol === symbol.toLowerCase()) ? WHITE : BLACK
                 put({ type: symbol.toLowerCase(), color: pieceColor }, tile)
+                fileIndex++
             }
         }
 
@@ -405,8 +406,6 @@ export const Geo = function (gfen) {
         var fileIndex = 0
 
         for (let char = 0; char < numberOfSymbols; char++) {
-            var axialIndex = axialFile(fileIndex)
-            var tile = [axialIndex, rankIndex]
             var symbol = positions[char];
             if (symbol == '/') {
                 fileIndex = 0
@@ -442,7 +441,7 @@ export const Geo = function (gfen) {
             return { valid: false }
         }
 
-        return true
+        return { valid: true }
     }
 
     function generateGfen () {
@@ -631,13 +630,17 @@ export const Geo = function (gfen) {
         var oneStepFromPromotion = rank == finalRankBeforePromotion
         var dir = whitePiece ? PYRAMID_ATTACK_DIRECTIONS[0] : PYRAMID_ATTACK_DIRECTIONS[1]
         if (rank === startRank) {
+            // NOTE: this is defintly a bug it only targets north
             var targetX = tile.x + N[0]
             var targetY = tile.y + N[1]
             var target = board[targetY][targetX]
             moves.push(buildMove(board, moves, tile, target, BITS.PYRAMID_2))
         }
         for (var j = 0; j < 2; j++) {
-            var tilesToEdge = numOfTilesToEdge[tile.y][tile.x][dir][j]
+            // NOTE: This line looks wrong precomputed is only 3 levels deep
+            //var tilesToEdge = numOfTilesToEdge[tile.y][tile.x][dir][j]
+            // I think I meant to do this
+            var tilesToEdge = numOfTilesToEdge[tile.y][tile.x][dir[j]]
             if (tilesToEdge > 0) {
                 var moveDir = dir[j]
                 var targetX = tile.x + DIRECTIONS[moveDir][0]
@@ -645,7 +648,7 @@ export const Geo = function (gfen) {
                 var target = board[targetY][targetX]
                 var flag = (typeof target.type === "undefined") ? BITS.NORMAL : BITS.CAPTURE
                 var promotion = oneStepFromPromotion ? true : false
-
+                // NOTE: I'm not checking for freindly pieces here
                 if (promotion) {
                     var pieces = [COLUMN, SPHERE, RING, DIAMOND]
                     var numberOfPieceTypes = pieces.length;
@@ -716,6 +719,7 @@ export const Geo = function (gfen) {
                     var t2Y = target.y + DIRECTIONS[offsetDir][1]
                     var targetCoord = { x: t2X, y: t2Y }
                     var isValid = validateCoord(targetCoord)
+                    // NOTE there's no check for friendly pieces on the 
                     if (isValid) {
                         var move2 = board[t2Y][t2Y]
                         var flag = color !== enemy ? BITS.NORMAL : BITS.CAPTURE
@@ -738,8 +742,8 @@ export const Geo = function (gfen) {
 
         var numberOfJumps = RING_JUMPS.length
         for (var jump = 0; jump < numberOfJumps; jump++) {
-            var targetX = RING_JUMPS[jump][0]
-            var targetY = RING_JUMPS[jump][1]
+            var targetX = tile.x + RING_JUMPS[jump][0]
+            var targetY = tile.y + RING_JUMPS[jump][1]
             var targetCoord = { x: targetX, y: targetY }
             var isValid = validateCoord(targetCoord)
             if (isValid) {
@@ -772,6 +776,7 @@ export const Geo = function (gfen) {
 
             if (color !== enemy) {
                 moves.push(buildMove(board, moves, tile, target, BITS.NORMAL))
+                // These need a validation check
                 switch (dirIndex) {
                     case 0 || 1:
                         if(!north) {
